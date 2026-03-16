@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Recipe Builder</title>
+    <link rel="stylesheet" href="styles/styles.css">
+</head>
+
+<body>
+
+    <header>
+        <h1>Recipe Builder</h1>
+        <p>Nutrition per 100g</p>
+    </header>
+
+    <div class="layout">
+
+        <div class="pantry-col">
+            <div class="section-title">Pantry</div>
+            <div class="scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Cal</th>
+                            <th>P</th>
+                            <th>C</th>
+                            <th>F</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="pantry-body"></tbody>
+                </table>
+            </div>
+
+            <div class="add-pantry-area">
+                <div class="section-title" style="background:none;border:none;padding:0 0 0.5rem;">Add Ingredient</div>
+
+                <div class="add-pantry-grid">
+                    <input id="new-name" type="text" placeholder="Name" />
+                    <select id="new-category">
+                        <option value="meat">meat</option>
+                        <option value="protein">protein</option>
+                        <option value="vegetable">vegetable</option>
+                        <option value="grain">grain</option>
+                        <option value="dairy">dairy</option>
+                        <option value="fat">fat</option>
+                        <option value="fruit">fruit</option>
+                        <option value="other">other</option>
+                    </select>
+                    <input id="new-cal" type="number" placeholder="Cal (per 100g)" min="0" />
+                    <input id="new-protein" type="number" placeholder="Protein (g)" min="0" />
+                    <input id="new-carbs" type="number" placeholder="Carbs (g)" min="0" />
+                    <input id="new-fat" type="number" placeholder="Fat (g)" min="0" />
+                </div>
+
+                <div style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center;">
+                    <button class="btn-primary" id="add-pantry-btn">+ Add to Pantry</button>
+                    <span id="pantry-warning" style="display:none;color:var(--red);font-size:0.78rem;"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="builder-col">
+            <div class="section">
+                <div class="section-title">New Recipe</div>
+
+                <div class="form-area">
+                    <div class="form-row">
+                        <label>Name</label>
+                        <input id="recipe-name" type="text" placeholder="e.g. Tofu Bowl" />
+                    </div>
+
+                    <div class="form-row">
+                        <label>Type</label>
+                        <select id="recipe-type">
+                            <option value="standard">Standard</option>
+                            <option value="vegetarian">Vegetarian (blocks meat)</option>
+                        </select>
+                    </div>
+
+                    <div class="btn-row">
+                        <button class="btn-primary" id="new-recipe-btn">Create</button>
+                        <button id="save-btn">Save</button>
+                        <button id="toggle-saved-btn">Saved ↕</button>
+                        <button id="clear-btn">Clear</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="saved-panel" class="hidden section">
+                <div class="section-title" style="background:none;border:none;padding-bottom:0.4rem">Saved Recipes</div>
+                <div id="saved-list"></div>
+            </div>
+
+            <div id="warning"></div>
+
+            <div class="section">
+                <div id="recipe-title" class="section-title"
+                    style="font-size:1rem;font-family:var(--sans);font-weight:600;color:var(--text);text-transform:none;letter-spacing:normal;">
+                    —
+                </div>
+
+                <div class="recipe-id-row">ID: <span id="recipe-id"></span></div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ingredient</th>
+                            <th>Grams</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="recipe-body"></tbody>
+                </table>
+            </div>
+
+            <div class="totals-grid">
+                <div class="total-box">
+                    <span>Calories</span>
+                    <strong id="total-calories">0</strong>
+                </div>
+                <div class="total-box">
+                    <span>Protein (g)</span>
+                    <strong id="total-protein">0</strong>
+                </div>
+                <div class="total-box">
+                    <span>Carbs (g)</span>
+                    <strong id="total-carbs">0</strong>
+                </div>
+                <div class="total-box">
+                    <span>Fat (g)</span>
+                    <strong id="total-fat">0</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { Pantry } from "/src/pantry.js";
+        const STORAGE_KEY = "recipes";
+        let current = null;
+        function get(id) {
+            return document.getElementById(id);
+        }
+        function setText(id, value) {
+            get(id).textContent = value;
+        }
+        function getSavedRecipes() {
+            const data = localStorage.getItem(STORAGE_KEY);
+
+            if (!data) {
+                return [];
+            }
+
+            try {
+                return JSON.parse(data);
+            } catch {
+                return [];
+            }
+        }
+        function saveRecipes(recipes) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(recipes));
+        }
+        function createRecipe(name, type) {
+            return {
+                id: "recipe_" + Date.now(),
+                name: name,
+                type: type,
+                items: [],
+                warning: ""
+            };
+        }
+
+        function addIngredient(recipe, ingredient) {
+            if (recipe.type === "vegetarian" && ingredient.category === "meat") {
+                recipe.warning = "Vegetarian recipe cannot add meat.";
+                return;
+            }
+            recipe.warning = "";
+            const existing = recipe.items.find(item => item.ingredient.id === ingredient.id);
+            if (existing) {
+                existing.grams += 100;
+            } else {
+                recipe.items.push({
+                    ingredient: ingredient,
+                    grams: 100
+                });
+            }
+        }
+        function getTotals(recipe) {
+            const totals = {
+                calories: 0,
+                protein: 0,
+                carbs: 0,
+                fat: 0
+            };
+
+            recipe.items.forEach(item => {
+                const factor = item.grams / 100;
+                totals.calories += item.ingredient.per100g.calories * factor;
+                totals.protein += item.ingredient.per100g.protein * factor;
+                totals.carbs += item.ingredient.per100g.carbs * factor;
+                totals.fat += item.ingredient.per100g.fat * factor;
+            });
+
+            return totals;
+        }
+        function renderPantry() {
+            const body = get("pantry-body");
+            let html = "";
+
+            Pantry.forEach(ingredient => {
+                html += `
+                    <tr>
+                        <td>${ingredient.name}</td>
+                        <td><span class="badge cat-${ingredient.category}">${ingredient.category}</span></td>
+                        <td class="num">${ingredient.per100g.calories}</td>
+                        <td class="num">${ingredient.per100g.protein}</td>
+                        <td class="num">${ingredient.per100g.carbs}</td>
+                        <td class="num">${ingredient.per100g.fat}</td>
+                        <td><button class="btn btn-add" data-id="${ingredient.id}">Add</button></td>
+                    </tr>
+                `;
+            });
+
+            body.innerHTML = html;
+
+            body.querySelectorAll(".btn-add").forEach(button => {
+                button.addEventListener("click", () => {
+                    const id = button.dataset.id;
+                    const ingredient = Pantry.find(item => item.id === id);
+
+                    if (ingredient) {
+                        handleAdd(ingredient);
+                    }
+                });
+            });
+        }
+
+        function renderRecipe() {
+            const body = get("recipe-body");
+
+            if (!current || current.items.length === 0) {
+                body.innerHTML = `<tr><td colspan="3" class="empty-cell">No ingredients yet.</td></tr>`;
+                renderTotals();
+                return;
+            }
+            let html = "";
+
+            current.items.forEach(item => {
+                html += `
+                    <tr>
+                        <td>${item.ingredient.name}</td>
+                        <td>
+                            <input 
+                                class="grams-input" 
+                                type="number" 
+                                value="${item.grams}" 
+                                min="1" 
+                                max="9999" 
+                                data-id="${item.ingredient.id}" 
+                            />
+                        </td>
+                        <td><button class="btn btn-remove" data-id="${item.ingredient.id}">✕</button></td>
+                    </tr>
+                `;
+            });
+            body.innerHTML = html;
+
+            body.querySelectorAll(".grams-input").forEach(input => {
+                input.addEventListener("change", () => {
+                    if (!current) {
+                        return;
+                    }
+
+                    const grams = parseInt(input.value, 10);
+
+                    if (isNaN(grams) || grams <= 0) {
+                        return;
+                    }
+
+                    const item = current.items.find(entry => entry.ingredient.id === input.dataset.id);
+
+                    if (item) {
+                        item.grams = grams;
+                        renderTotals();
+                    }
+                });
+            });
+
+            body.querySelectorAll(".btn-remove").forEach(button => {
+                button.addEventListener("click", () => {
+                    if (!current) {
+                        return;
+                    }
+
+                    current.items = current.items.filter(item => item.ingredient.id !== button.dataset.id);
+                    renderRecipe();
+                });
+            });
+
+            renderTotals();
+        }
+
+        function renderTotals() {
+            const totals = current
+                ? getTotals(current)
+                : { calories: 0, protein: 0, carbs: 0, fat: 0 };
+
+            setText("total-calories", totals.calories.toFixed(0));
+            setText("total-protein", totals.protein.toFixed(1));
+            setText("total-carbs", totals.carbs.toFixed(1));
+            setText("total-fat", totals.fat.toFixed(1));
+        }
+
+        function renderWarning(message) {
+            const warning = get("warning");
+            const text = message || (current ? current.warning : "");
+
+            warning.textContent = text;
+            warning.style.display = text ? "block" : "none";
+        }
+
+        function renderSaved() {
+            const list = get("saved-list");
+            const recipes = getSavedRecipes();
+            if (recipes.length === 0) {
+                list.innerHTML = `<p class="empty-cell">No saved recipes yet.</p>`;
+                return;
+            }
+            let html = "";
+            recipes.forEach(recipe => {
+                html += `
+                    <div class="saved-row">
+                        <div class="saved-info">
+                            <span class="saved-name">${recipe.name}</span>
+                            <span class="badge type-${recipe.type}">${recipe.type}</span>
+                        </div>
+                        <div class="saved-actions">
+                            <button class="btn btn-load" data-id="${recipe.id}">Load</button>
+                            <button class="btn btn-remove" data-id="${recipe.id}">Delete</button>
+                        </div>
+                    </div>
+                `;
+            });
+            list.innerHTML = html;
+            list.querySelectorAll(".btn-load").forEach(button => {
+                button.addEventListener("click", () => {
+                    handleLoad(button.dataset.id);
+                });
+            });
+            list.querySelectorAll(".btn-remove").forEach(button => {
+                button.addEventListener("click", () => {
+                    handleDelete(button.dataset.id);
+                });
+            });
+        }
+
+        function handleAdd(ingredient) {
+            if (!current) {
+                renderWarning("Create a recipe first.");
+                return;
+            }
+
+            addIngredient(current, ingredient);
+            renderWarning();
+            renderRecipe();
+        }
+
+        function handleSave() {
+            if (!current) {
+                renderWarning("No active recipe to save.");
+                return;
+            }
+
+            const recipes = getSavedRecipes().filter(recipe => recipe.id !== current.id);
+
+            recipes.push({
+                id: current.id,
+                name: current.name,
+                type: current.type,
+                items: current.items
+            });
+
+            saveRecipes(recipes);
+            showToast("Recipe saved!");
+            renderSaved();
+        }
+
+        function handleLoad(id) {
+            const saved = getSavedRecipes().find(recipe => recipe.id === id);
+
+            if (!saved) {
+                renderWarning("Recipe not found.");
+                return;
+            }
+
+            current = {
+                id: saved.id,
+                name: saved.name,
+                type: saved.type,
+                warning: "",
+                items: saved.items.map(item => {
+                    const pantryIngredient = Pantry.find(entry => entry.id === item.ingredient.id);
+
+                    return {
+                        ingredient: pantryIngredient ? pantryIngredient : item.ingredient,
+                        grams: item.grams
+                    };
+                })
+            };
+
+            get("recipe-name").value = current.name;
+            get("recipe-type").value = current.type;
+
+            setText("recipe-id", current.id);
+            setText("recipe-title", current.name);
+
+            renderWarning();
+            renderRecipe();
+            showToast(`Loaded "${current.name}"`);
+        }
+
+        function handleDelete(id) {
+            const recipes = getSavedRecipes().filter(recipe => recipe.id !== id);
+            saveRecipes(recipes);
+
+            if (current && current.id === id) {
+                current = null;
+                renderRecipe();
+            }
+
+            renderSaved();
+            showToast("Deleted.");
+        }
+
+        function showToast(message) {
+            const toast = document.createElement("div");
+            toast.className = "toast";
+            toast.textContent = message;
+
+            document.body.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.add("show");
+            });
+
+            setTimeout(() => {
+                toast.classList.remove("show");
+
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 2200);
+        }
+
+        get("new-recipe-btn").addEventListener("click", () => {
+            const name = get("recipe-name").value.trim();
+            const type = get("recipe-type").value;
+
+            if (!name) {
+                renderWarning("Please enter a recipe name.");
+                return;
+            }
+
+            current = createRecipe(name, type);
+
+            setText("recipe-id", current.id);
+            setText("recipe-title", current.name);
+
+            renderWarning();
+            renderRecipe();
+            showToast(`"${name}" created!`);
+        });
+
+        get("save-btn").addEventListener("click", handleSave);
+
+        get("clear-btn").addEventListener("click", () => {
+            current = null;
+            get("recipe-name").value = "";
+            setText("recipe-id", "");
+            setText("recipe-title", "—");
+            renderWarning();
+            renderRecipe();
+        });
+
+        get("toggle-saved-btn").addEventListener("click", () => {
+            const panel = get("saved-panel");
+            const hidden = panel.classList.toggle("hidden");
+
+            if (!hidden) {
+                renderSaved();
+            }
+        });
+
+        get("add-pantry-btn").addEventListener("click", () => {
+            const warning = get("pantry-warning");
+            const name = get("new-name").value.trim();
+            const category = get("new-category").value;
+            const calories = parseFloat(get("new-cal").value);
+            const protein = parseFloat(get("new-protein").value);
+            const carbs = parseFloat(get("new-carbs").value);
+            const fat = parseFloat(get("new-fat").value);
+
+            if (!name) {
+                warning.textContent = "Name is required.";
+                warning.style.display = "inline";
+                return;
+            }
+
+            if ([calories, protein, carbs, fat].some(isNaN)) {
+                warning.textContent = "All nutrition fields are required.";
+                warning.style.display = "inline";
+                return;
+            }
+
+            warning.style.display = "none";
+
+            const id = "custom_" + name.toLowerCase().replace(/\s+/g, "_") + "_" + Date.now();
+
+            Pantry.push({
+                id: id,
+                name: name,
+                category: category,
+                per100g: {
+                    calories: calories,
+                    protein: protein,
+                    carbs: carbs,
+                    fat: fat
+                }
+            });
+
+            get("new-name").value = "";
+            get("new-cal").value = "";
+            get("new-protein").value = "";
+            get("new-carbs").value = "";
+            get("new-fat").value = "";
+            get("new-category").value = "meat";
+
+            renderPantry();
+            showToast(`"${name}" added to pantry!`);
+        });
+
+        renderPantry();
+        renderRecipe();
+    </script>
+</body>
+
+</html>
